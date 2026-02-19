@@ -8,8 +8,47 @@ use rquickjs::{
     Ctx, Exception, Function,
 };
 
-/// Register TX channel
-pub fn register_oneshot<'js, T>(
+/// Register RX oneshot channel
+pub fn register_oneshot_rx<'js, T>(
+    ctx: Ctx<'js>,
+    rx: oneshot::Receiver<T>,
+    f: &str,
+) -> anyhow::Result<()>
+where
+    T: rquickjs::IntoJs<'js> + rquickjs::FromJs<'js> + Clone + Send + 'static,
+{
+    let rx = Arc::new(Mutex::new(Some(rx)));
+    ctx.globals().set(
+        f,
+        Func::new(Async(move |ctx: Ctx<'js>| {
+            let rx = rx.clone();
+            async move {
+                match rx.lock() {
+                    Ok(mut guard) => match guard.take() {
+                        Some(rx) => match rx.await {
+                            Ok(msg) => Ok::<T, rquickjs::Error>(msg),
+                            Err(_) => Err::<T, rquickjs::Error>(Exception::throw_message(
+                                &ctx,
+                                "Channel Closed",
+                            )),
+                        },
+                        None => Err::<T, rquickjs::Error>(Exception::throw_message(
+                            &ctx,
+                            "Already Resolved",
+                        )),
+                    },
+                    Err(_) => {
+                        Err::<T, rquickjs::Error>(Exception::throw_message(&ctx, "Mutex Error"))
+                    }
+                }
+            }
+        })),
+    )?;
+    Ok(())
+}
+
+/// Register TX oneshot channel
+pub fn register_oneshot_tx<'js, T>(
     ctx: Ctx<'js>,
     tx: oneshot::Sender<T>,
     f: &str,
@@ -40,7 +79,7 @@ where
 }
 
 /// Register TX channel
-pub fn register_tx_channel<'js, T>(
+pub fn register_mpsc_tx<'js, T>(
     ctx: Ctx<'js>,
     tx: UnboundedSender<T>,
     f: &str,
@@ -72,7 +111,7 @@ where
 }
 
 /// Register RX channel
-pub fn register_rx_channel<'js, T>(
+pub fn register_mpsc_rx<'js, T>(
     ctx: Ctx<'js>,
     rx: UnboundedReceiver<T>,
     f: &str,
@@ -105,7 +144,7 @@ where
 }
 
 /// Register RX channel callback
-pub fn register_rx_channel_cb<'js, T>(
+pub fn register_mpsc_rx_cb<'js, T>(
     ctx: Ctx<'js>,
     rx: UnboundedReceiver<T>,
     f: &str,
@@ -137,7 +176,7 @@ where
 }
 
 /// Register RX channel callback with cancel function
-pub fn register_rx_channel_cb_cancel<'js, T>(
+pub fn register_mpsc_rx_cb_cancel<'js, T>(
     ctx: Ctx<'js>,
     rx: UnboundedReceiver<T>,
     f: &str,
