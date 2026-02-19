@@ -131,15 +131,20 @@ async fn sleep(n: u64) -> rquickjs::Result<()> {
     Ok(())
 }
 
+/*
+    NOTE:
+
+    For functions that return a oneshot based cancel function there is a concurrency issue if if
+    the cancel function is not caputured to a variable when ctx.eval() completes and the JS runtime
+    runs to completion as a future using rt.idle() or rt.execute_pending_job().
+
+        Error: <<oneshot: called after complete>>
+
+    Either ensure that the cancel function is captured or just use the simpler non-cancel functions
+    if the cancel function is not required
+*/
+
 /// setTimeout -> returns cancel function (using oneshot)
-///
-/// NOTE: There appears to be a concurrency issue if if the cancel function is
-///       not caputured to a variable when ctx.eval() completes and the JS
-///       runtime runs to completion as a future using rt.idle() or
-///       rt.execute_pending_job(). <<oneshot: called after complete>>
-///
-///       Either make sure that the cancel function is captured or just use the
-///       simpler async __sleep function
 #[rquickjs::function]
 fn set_timeout<'js>(
     ctx: rquickjs::Ctx<'js>,
