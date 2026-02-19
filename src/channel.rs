@@ -175,6 +175,19 @@ where
     Ok(())
 }
 
+/*
+    NOTE:
+
+    For functions that return a oneshot based cancel function there is a concurrency issue if if
+    the cancel function is not caputured to a variable when ctx.eval() completes and the JS runtime
+    runs to completion as a future using rt.idle() or rt.execute_pending_job().
+
+        Error: <<oneshot: called after complete>>
+
+    Either ensure that the cancel function is captured or just use the simpler non-cancel functions
+    if the cancel function is not required
+*/
+
 /// Register RX channel callback with cancel function
 pub fn register_mpsc_rx_cb_cancel<'js, T>(
     ctx: Ctx<'js>,
