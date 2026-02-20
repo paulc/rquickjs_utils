@@ -1,6 +1,6 @@
 use crate::run::run_script;
 use crate::utils::print_v;
-use rquickjs::Ctx;
+use rquickjs::{function::Rest, Ctx};
 use std::io::Write;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -16,7 +16,7 @@ pub async fn repl(ctx: Ctx<'_>) -> anyhow::Result<()> {
                 Ok(v) => {
                     if !v.is_undefined() {
                         ctx.globals().set("_", v.clone())?;
-                        let _ = print_v(ctx.clone(), v);
+                        let _ = print_v(ctx.clone(), Rest(vec![v]));
                     }
                 }
                 Err(e) => eprintln!("{e}"),
@@ -89,7 +89,7 @@ pub async fn repl_rl(ctx: Ctx<'_>) -> anyhow::Result<()> {
             Ok(v) => {
                 if !v.is_undefined() {
                     ctx.globals().set("_", v.clone())?;
-                    let _ = print_v(ctx.clone(), v);
+                    let _ = print_v(ctx.clone(), Rest(vec![v]));
                 }
             }
             Err(e) => eprintln!("[-] JS Error: {e}"),

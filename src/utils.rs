@@ -33,49 +33,27 @@ fn debug(v: Value<'_>) {
     println!("{:?}", v);
 }
 
-/// Print JS String
+/// Print JS Strings
 #[rquickjs::function]
-fn print(s: String) {
-    println!("{}", s);
+fn print(args: Rest<String>) {
+    println!("{}", args.join(" "));
 }
 
-/// Convert Value to JSON String
-pub fn value_to_json<'js>(ctx: Ctx<'js>, v: Value<'js>) -> anyhow::Result<String> {
-    if v.is_undefined() {
-        Ok("null".into())
-    } else {
-        ctx.json_stringify(v)?
+/// Print JS Values as JSON
+#[rquickjs::function]
+pub fn print_v<'js>(ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result<()> {
+    for (i, v) in args.iter().enumerate() {
+        let output = ctx
+            .json_stringify(v)?
             .and_then(|s| s.as_string().map(|s| s.to_string().ok()).flatten())
-            .ok_or_else(|| anyhow::anyhow!("JSON Error"))
+            .unwrap_or_else(|| format!("{:?}", &v));
+        print!(
+            "{}{}{}",
+            if i == 0 { "" } else { " " },
+            output,
+            if i == args.len() - 1 { "\n" } else { "" }
+        );
     }
-}
-
-/// Convert JSON String to Value
-pub fn json_to_value<'js>(ctx: Ctx<'js>, json: &str) -> anyhow::Result<Value<'js>> {
-    match ctx.json_parse(json.as_bytes()) {
-        Ok(v) => Ok(v),
-        Err(e) => {
-            if let Ok(ex) = rquickjs::Exception::from_value(ctx.catch()) {
-                Err(anyhow::anyhow!(
-                    "JSON Error: {}\n{}",
-                    ex.message().unwrap_or("-".into()),
-                    ex.stack().unwrap_or("-".into())
-                ))
-            } else {
-                Err(anyhow::anyhow!("JSON Error: {e}"))
-            }
-        }
-    }
-}
-
-/// Print JS Value as JSON
-#[rquickjs::function]
-pub fn print_v<'js>(ctx: Ctx<'js>, v: Value<'js>) -> rquickjs::Result<()> {
-    let output = ctx
-        .json_stringify(&v)?
-        .and_then(|s| s.as_string().map(|s| s.to_string().ok()).flatten())
-        .unwrap_or_else(|| format!("{:?}", &v));
-    println!("{}", output);
     Ok(())
 }
 
@@ -131,7 +109,80 @@ async fn sleep(n: u64) -> rquickjs::Result<()> {
     Ok(())
 }
 
+#[rquickjs::function]
+pub fn set_timeout<'js>(
+    ctx: rquickjs::Ctx<'js>,
+    f: rquickjs::Function<'js>,
+    delay_ms: u64,
+    args: Rest<Value<'js>>,
+) -> rquickjs::Result<()> {
+    let mut arg = rquickjs::function::Args::new(ctx.clone(), args.len());
+    arg.push_args(args.iter())?;
+
+    let _handle = ctx.spawn({
+        async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+            let _ = f.call_arg::<()>(arg);
+        }
+    });
+
+    Ok(())
+}
+
+#[rquickjs::function]
+pub fn set_interval<'js>(
+    ctx: rquickjs::Ctx<'js>,
+    f: rquickjs::Function<'js>,
+    delay_ms: u64,
+    args: Rest<Value<'js>>,
+) -> rquickjs::Result<()> {
+    let _handle = ctx.spawn({
+        let ctx = ctx.clone();
+        async move {
+            loop {
+                let mut arg = rquickjs::function::Args::new(ctx.clone(), args.len());
+                let _ = arg.push_args(args.iter());
+                tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                let _ = f.call_arg::<()>(arg);
+            }
+        }
+    });
+
+    Ok(())
+}
+
+/// Convert Value to JSON String
+pub fn value_to_json<'js>(ctx: Ctx<'js>, v: Value<'js>) -> anyhow::Result<String> {
+    if v.is_undefined() {
+        Ok("null".into())
+    } else {
+        ctx.json_stringify(v)?
+            .and_then(|s| s.as_string().map(|s| s.to_string().ok()).flatten())
+            .ok_or_else(|| anyhow::anyhow!("JSON Error"))
+    }
+}
+
+/// Convert JSON String to Value
+pub fn json_to_value<'js>(ctx: Ctx<'js>, json: &str) -> anyhow::Result<Value<'js>> {
+    match ctx.json_parse(json.as_bytes()) {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            if let Ok(ex) = rquickjs::Exception::from_value(ctx.catch()) {
+                Err(anyhow::anyhow!(
+                    "JSON Error: {}\n{}",
+                    ex.message().unwrap_or("-".into()),
+                    ex.stack().unwrap_or("-".into())
+                ))
+            } else {
+                Err(anyhow::anyhow!("JSON Error: {e}"))
+            }
+        }
+    }
+}
+
 /*
+    Cancellable versions of setTimeout / setInterval
+
     NOTE:
 
     For functions that return a oneshot based cancel function there is a concurrency issue if if
@@ -146,7 +197,7 @@ async fn sleep(n: u64) -> rquickjs::Result<()> {
 
 /// setTimeout -> returns cancel function (using oneshot)
 #[rquickjs::function]
-fn set_timeout<'js>(
+pub fn set_timeout_cancel<'js>(
     ctx: rquickjs::Ctx<'js>,
     f: rquickjs::Function<'js>,
     delay_ms: u64,
@@ -185,7 +236,7 @@ fn set_timeout<'js>(
 }
 
 #[rquickjs::function]
-fn set_interval<'js>(
+pub fn set_interval_cancel<'js>(
     ctx: rquickjs::Ctx<'js>,
     f: rquickjs::Function<'js>,
     delay_ms: u64,
