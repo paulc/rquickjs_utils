@@ -61,7 +61,7 @@ impl Date {
                 .get(5)
                 .and_then(|v| v.as_int().map(|i| i as u32))
                 .unwrap_or(0);
-            let _ms = args
+            let ms = args
                 .get(6)
                 .and_then(|v| v.as_int().map(|i| i as u32))
                 .unwrap_or(0);
@@ -71,6 +71,9 @@ impl Date {
                 .with_ymd_and_hms(year, month + 1, day, hour, minute, second)
                 .latest()
                 .ok_or_else(|| Exception::throw_message(&ctx, "Invalid Date"))?;
+
+            // Add milliseconds (convert to nanoseconds)
+            let datetime = datetime.with_nanosecond(ms * 1_000_000).unwrap_or(datetime); // Fallback to original if ms invalid
 
             datetime.timestamp_millis()
         };
@@ -127,6 +130,10 @@ impl Date {
             .get(5)
             .and_then(|v| v.as_int().map(|i| i as u32))
             .unwrap_or(0);
+        let ms = args
+            .get(6)
+            .and_then(|v| v.as_int().map(|i| i as u32))
+            .unwrap_or(0);
 
         // Handle 2-digit years (0-99 become 1900-1999)
         let year = if year >= 0 && year < 100 {
@@ -139,6 +146,9 @@ impl Date {
             .with_ymd_and_hms(year, month + 1, day, hour, minute, second)
             .latest()
             .ok_or_else(|| Exception::throw_message(&ctx, "Invalid Date"))?;
+
+        // Add milliseconds (convert to nanoseconds)
+        let datetime = datetime.with_nanosecond(ms * 1_000_000).unwrap_or(datetime); // Fallback to original if ms invalid
 
         Ok(datetime.timestamp_millis())
     }
@@ -172,7 +182,7 @@ impl Date {
     /// Get the milliseconds (0-999)
     #[qjs(rename = "getMilliseconds")]
     pub fn milliseconds(&self) -> i64 {
-        self.timestamp_ms % 1000
+        self.timestamp_ms.rem_euclid(1000)
     }
 
     /// Get the minutes (0-59)
@@ -203,10 +213,7 @@ impl Date {
     #[qjs(rename = "getTimezoneOffset")]
     pub fn timezone_offset(&self) -> i32 {
         // Calculate offset between local and UTC
-        let local = self.to_local();
-        let utc = self.to_utc();
-        let offset_seconds = (local.naive_local() - utc.naive_utc()).num_seconds();
-        (offset_seconds / 60) as i32
+        self.to_local().offset().local_minus_utc() / 60
     }
 
     /// Get the day of the month (1-31) - UTC
@@ -236,7 +243,7 @@ impl Date {
     /// Get the milliseconds - UTC
     #[qjs(rename = "getUTCMilliseconds")]
     pub fn utc_milliseconds(&self) -> i64 {
-        self.timestamp_ms % 1000
+        self.timestamp_ms.rem_euclid(1000)
     }
 
     /// Get the minutes - UTC
@@ -293,7 +300,7 @@ impl Date {
     pub fn set_milliseconds(&mut self, ms: i64) -> i64 {
         let current = self.to_local();
         // Convert ms to nanoseconds, handling modulo for valid range
-        let ns = ((ms % 1000) * 1_000_000) as u32;
+        let ns = (ms.rem_euclid(1000) * 1_000_000) as u32;
         if let Some(new_date) = current.with_nanosecond(ns) {
             self.timestamp_ms = new_date.timestamp_millis();
         }
@@ -392,6 +399,18 @@ impl Date {
         }
         self.timestamp_ms
     }
+
+    #[qjs(rename = "setUTCMilliseconds")]
+    pub fn set_utc_milliseconds(&mut self, ms: i64) -> i64 {
+        let current = self.to_utc();
+        // Convert ms to nanoseconds, handling modulo for valid range
+        let ns = (ms.rem_euclid(1000) * 1_000_000) as u32;
+        if let Some(new_date) = current.with_nanosecond(ns) {
+            self.timestamp_ms = new_date.timestamp_millis();
+        }
+        self.timestamp_ms
+    }
+
     // ==================== Conversion Methods ====================
 
     /// Convert to ISO 8601 string (UTC)
@@ -444,17 +463,6 @@ impl Date {
     // ==================== Non-standard Extensions ====================
 
     /// Format the date using strftime format string (local time)
-    ///
-    /// Common format specifiers:
-    /// - %Y: Year with century (2024)
-    /// - %m: Month (01-12)
-    /// - %d: Day of month (01-31)
-    /// - %H: Hour (00-23)
-    /// - %M: Minute (00-59)
-    /// - %S: Second (00-59)
-    /// - %A: Full weekday name (Monday)
-    /// - %B: Full month name (January)
-    /// - %Z: Timezone name
     pub fn strftime(&self, format: String) -> String {
         self.to_local().format(&format).to_string()
     }
@@ -577,28 +585,167 @@ mod tests {
         ctx.with(|ctx| {
             register_date(&ctx).unwrap();
 
-            // Create date from timestamp
-            let result: i64 = ctx
-                .eval(r#"const d1 = new Date(1705314645123); d1.getTime();"#)
-                .unwrap();
+            let result: i64 = ctx.eval(r#"new Date(1705314645123).getTime();"#).unwrap();
             assert_eq!(result, TEST_TS);
 
-            // Test UTC getters
             let year: i32 = ctx
-                .eval(r#"const d2 = new Date(1705314645123); d2.getUTCFullYear();"#)
+                .eval(r#"new Date(1705314645123).getUTCFullYear();"#)
                 .unwrap();
             assert_eq!(year, 2024);
 
             let month: u32 = ctx
-                .eval(r#"const d3 = new Date(1705314645123); d3.getUTCMonth();"#)
+                .eval(r#"new Date(1705314645123).getUTCMonth();"#)
                 .unwrap();
             assert_eq!(month, 0);
 
-            // Test ISO string
             let iso: String = ctx
-                .eval(r#"const d4 = new Date(1705314645123); d4.toISOString();"#)
+                .eval(r#"new Date(1705314645123).toISOString();"#)
                 .unwrap();
             assert_eq!(iso, "2024-01-15T10:30:45.123Z");
+
+            let strftime: String = ctx
+                .eval(r#"new Date(1705314645123).strftime("%Y-%m-%d %T");"#)
+                .unwrap();
+            assert_eq!(strftime, "2024-01-15 10:30:45");
+        });
+    }
+    #[test]
+    fn test_constructor_with_components() {
+        let rt = Runtime::new().unwrap();
+        let ctx = Context::full(&rt).unwrap();
+
+        ctx.with(|ctx| {
+            register_date(&ctx).unwrap();
+
+            // Test new Date(year, month, day, hours, minutes, seconds, ms)
+            // Note: January 15, 2024 10:30:45.123 UTC
+            // Month is 0-indexed in JS, so 0 = January
+            let ts: i64 = ctx
+                .eval(r#"new Date(2024, 0, 15, 10, 30, 45, 123).getTime()"#)
+                .unwrap();
+            assert_eq!(ts, TEST_TS);
+
+            // This creates the date in local time, so we need to verify against local expectation
+            // For a robust test, check that the components round-trip correctly
+            let year: i32 = ctx
+                .eval(r#"new Date(2024, 0, 15, 10, 30, 45, 123).getFullYear()"#)
+                .unwrap();
+            assert_eq!(year, 2024);
+
+            let month: u32 = ctx
+                .eval(r#"new Date(2024, 0, 15, 10, 30, 45, 123).getMonth()"#)
+                .unwrap();
+            assert_eq!(month, 0);
+
+            let day: u32 = ctx
+                .eval(r#"new Date(2024, 0, 15, 10, 30, 45, 123).getDate()"#)
+                .unwrap();
+            assert_eq!(day, 15);
+
+            let hours: u32 = ctx
+                .eval(r#"new Date(2024, 0, 15, 10, 30, 45, 123).getHours()"#)
+                .unwrap();
+            assert_eq!(hours, 10);
+
+            let minutes: u32 = ctx
+                .eval(r#"new Date(2024, 0, 15, 10, 30, 45, 123).getMinutes()"#)
+                .unwrap();
+            assert_eq!(minutes, 30);
+
+            let seconds: u32 = ctx
+                .eval(r#"new Date(2024, 0, 15, 10, 30, 45, 123).getSeconds()"#)
+                .unwrap();
+            assert_eq!(seconds, 45);
+
+            let ms: i64 = ctx
+                .eval(r#"new Date(2024, 0, 15, 10, 30, 45, 123).getMilliseconds()"#)
+                .unwrap();
+            assert_eq!(ms, 123);
+        });
+    }
+
+    #[test]
+    fn test_utc_static_method() {
+        let rt = Runtime::new().unwrap();
+        let ctx = Context::full(&rt).unwrap();
+
+        ctx.with(|ctx| {
+            register_date(&ctx).unwrap();
+
+            // Test Date.UTC(year, month, day, hours, minutes, seconds, ms)
+            // Returns timestamp directly
+            let ts: i64 = ctx
+                .eval(r#"Date.UTC(2024, 0, 15, 10, 30, 45, 123)"#)
+                .unwrap();
+
+            // This should equal our test timestamp
+            assert_eq!(ts, TEST_TS);
+
+            // Test with minimal arguments (year, month only)
+            let ts_minimal: i64 = ctx.eval(r#"Date.UTC(2024, 0)"#).unwrap();
+
+            // Should be 2024-01-01 00:00:00.000 UTC
+            let expected_minimal = Utc
+                .with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
+                .latest()
+                .unwrap()
+                .timestamp_millis();
+            assert_eq!(ts_minimal, expected_minimal);
+
+            // Test 2-digit year handling (0-99 → 1900-1999)
+            let ts_2digit: i64 = ctx.eval(r#"Date.UTC(99, 11, 31)"#).unwrap();
+
+            let expected_2digit = Utc
+                .with_ymd_and_hms(1999, 12, 31, 0, 0, 0)
+                .latest()
+                .unwrap()
+                .timestamp_millis();
+            assert_eq!(ts_2digit, expected_2digit);
+
+            // Test that Date.UTC and new Date(Date.UTC(...)) give consistent results
+            let utc_ts: i64 = ctx.eval(r#"Date.UTC(2024, 5, 15, 12, 0, 0, 0)"#).unwrap();
+
+            let from_utc: i64 = ctx
+                .eval(r#"new Date(Date.UTC(2024, 5, 15, 12, 0, 0, 0)).getTime()"#)
+                .unwrap();
+
+            assert_eq!(utc_ts, from_utc);
+        });
+    }
+
+    #[test]
+    fn test_constructor_utc_roundtrip() {
+        let rt = Runtime::new().unwrap();
+        let ctx = Context::full(&rt).unwrap();
+
+        ctx.with(|ctx| {
+            register_date(&ctx).unwrap();
+
+            // Create date using Date.UTC and verify UTC getters
+            let utc_year: i32 = ctx
+                .eval(r#"new Date(Date.UTC(2024, 0, 15, 10, 30, 45, 123)).getUTCFullYear()"#)
+                .unwrap();
+            assert_eq!(utc_year, 2024);
+
+            let utc_month: u32 = ctx
+                .eval(r#"new Date(Date.UTC(2024, 0, 15, 10, 30, 45, 123)).getUTCMonth()"#)
+                .unwrap();
+            assert_eq!(utc_month, 0);
+
+            let utc_day: u32 = ctx
+                .eval(r#"new Date(Date.UTC(2024, 0, 15, 10, 30, 45, 123)).getUTCDate()"#)
+                .unwrap();
+            assert_eq!(utc_day, 15);
+
+            let utc_hours: u32 = ctx
+                .eval(r#"new Date(Date.UTC(2024, 0, 15, 10, 30, 45, 123)).getUTCHours()"#)
+                .unwrap();
+            assert_eq!(utc_hours, 10);
+
+            let utc_ms: i64 = ctx
+                .eval(r#"new Date(Date.UTC(2024, 0, 15, 10, 30, 45, 123)).getUTCMilliseconds()"#)
+                .unwrap();
+            assert_eq!(utc_ms, 123);
         });
     }
 }
