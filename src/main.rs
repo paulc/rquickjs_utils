@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rquickjs_utils::date::register_date;
+use rquickjs_utils::fetch::register_fetch;
 use rquickjs_utils::repl::repl_rl;
 use rquickjs_utils::run::{call_fn, get_script, run_module, run_script};
 use rquickjs_utils::utils::{json_to_value, register_fns, value_to_json};
@@ -62,6 +63,7 @@ async fn main() -> anyhow::Result<()> {
     async_with!(ctx => |ctx| {
         register_fns(&ctx)?;
         register_date(&ctx)?;
+        register_fetch(&ctx)?;
 
         // Run modules
         for module in args.module {
