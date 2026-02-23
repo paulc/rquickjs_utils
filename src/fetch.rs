@@ -189,17 +189,22 @@ pub async fn fetch<'js>(ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Resu
         }
     }
 
-    // Body (string)
+    // Accept body as either String or ArrayBuffer
     if let Ok(body) = properties.get::<_, String>("body") {
         builder = builder.body(body);
-    }
-    // Body (arraybuffer)
-    if let Ok(body) = properties.get::<_, ArrayBuffer<'_>>("body") {
+    } else if let Ok(body) = properties.get::<_, ArrayBuffer<'_>>("body") {
         let body = body
             .as_bytes()
             .ok_or_else(|| Exception::throw_message(&ctx, "Invalid Body"))?
             .to_vec();
         builder = builder.body(body);
+    } else if let Ok(v) = properties.get::<_, Value<'_>>("body") {
+        if !v.is_undefined() {
+            return Err(Exception::throw_message(
+                &ctx,
+                "Invalid Body (must be String or ArrayBuffer",
+            ));
+        }
     }
 
     let response = builder
