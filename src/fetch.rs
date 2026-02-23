@@ -202,7 +202,7 @@ pub async fn fetch<'js>(ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Resu
         if !v.is_undefined() {
             return Err(Exception::throw_message(
                 &ctx,
-                "Invalid Body (must be String or ArrayBuffer",
+                "Invalid Body (must be String or ArrayBuffer)",
             ));
         }
     }
