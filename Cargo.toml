@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-anyhow = "1.0.101"
+anyhow = { version = "1.0.100", default-features = false }
 argh = "0.1.14"
 chrono = "0.4.43"
 reqwest = "0.13.2"
