@@ -1,9 +1,23 @@
 use crate::run::run_script;
 use crate::utils::print_v;
-use rquickjs::{function::Rest, Ctx};
+use rquickjs::{function::Rest, CatchResultExt, Ctx, Value};
 use std::io::Write;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
+
+/// If `v` is a promise, drive it to completion and return the resolved value.
+async fn resolve_value<'js>(ctx: &Ctx<'js>, v: Value<'js>) -> anyhow::Result<Value<'js>> {
+    if v.is_promise() {
+        let promise = v.into_promise().expect("checked is_promise");
+        promise
+            .into_future::<Value<'js>>()
+            .await
+            .catch(ctx)
+            .map_err(|e| anyhow::anyhow!("{e}"))
+    } else {
+        Ok(v)
+    }
+}
 
 /// Simple REPL
 pub async fn repl(ctx: Ctx<'_>) -> anyhow::Result<()> {
@@ -13,12 +27,15 @@ pub async fn repl(ctx: Ctx<'_>) -> anyhow::Result<()> {
         let script = read_multiline_input(&mut reader).await?;
         if !script.is_empty() {
             match run_script(ctx.clone(), script).await {
-                Ok(v) => {
-                    if !v.is_undefined() {
-                        ctx.globals().set("_", v.clone())?;
-                        let _ = print_v(ctx.clone(), Rest(vec![v]));
+                Ok(v) => match resolve_value(&ctx, v).await {
+                    Ok(v) => {
+                        if !v.is_undefined() {
+                            ctx.globals().set("_", v.clone())?;
+                            let _ = print_v(ctx.clone(), Rest(vec![v]));
+                        }
                     }
-                }
+                    Err(e) => eprintln!("{e}"),
+                },
                 Err(e) => eprintln!("{e}"),
             }
         }
@@ -86,12 +103,15 @@ pub async fn repl_rl(ctx: Ctx<'_>) -> anyhow::Result<()> {
     // Get input cmd
     while let Some(cmd) = cmd_rx.recv().await {
         match run_script(ctx.clone(), cmd).await {
-            Ok(v) => {
-                if !v.is_undefined() {
-                    ctx.globals().set("_", v.clone())?;
-                    let _ = print_v(ctx.clone(), Rest(vec![v]));
+            Ok(v) => match resolve_value(&ctx, v).await {
+                Ok(v) => {
+                    if !v.is_undefined() {
+                        ctx.globals().set("_", v.clone())?;
+                        let _ = print_v(ctx.clone(), Rest(vec![v]));
+                    }
                 }
-            }
+                Err(e) => eprintln!("[-] JS Error: {e}"),
+            },
             Err(e) => eprintln!("[-] JS Error: {e}"),
         }
         reply_tx.send(()).await?;
