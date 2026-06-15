@@ -8,7 +8,7 @@ use rquickjs_utils::utils::{json_to_value, register_fns, value_to_json};
 
 use argh::FromArgs;
 
-use rquickjs::{async_with, AsyncContext, AsyncRuntime};
+use rquickjs::{AsyncContext, AsyncRuntime};
 
 use tokio::signal::ctrl_c;
 
@@ -60,19 +60,19 @@ async fn main() -> anyhow::Result<()> {
         .await;
 
     // Create
-    async_with!(ctx => |ctx| {
+    ctx.async_with(async |ctx| {
         register_fns(&ctx)?;
         register_date(&ctx)?;
         register_fetch(&ctx)?;
 
         // Run modules
         for module in args.module {
-            run_module(ctx.clone(),get_script(&module)?).await?;
+            run_module(ctx.clone(), get_script(&module)?).await?;
         }
 
         // Run scripts
         for script in args.script {
-            run_script(ctx.clone(),get_script(&script)?).await?;
+            run_script(ctx.clone(), get_script(&script)?).await?;
         }
 
         // Run REPL
@@ -81,16 +81,20 @@ async fn main() -> anyhow::Result<()> {
         }
 
         // Call JS
-        for (f,a) in args.call.iter().zip(args.arg.iter().chain(std::iter::repeat(&("".to_string())))) {
+        for (f, a) in args
+            .call
+            .iter()
+            .zip(args.arg.iter().chain(std::iter::repeat(&("".to_string()))))
+        {
             let r = if a.is_empty() {
-                call_fn(ctx.clone(),&f,((),)).await?
+                call_fn(ctx.clone(), &f, ((),)).await?
             } else {
-                call_fn(ctx.clone(),&f,(json_to_value(ctx.clone(),a)?,)).await?
+                call_fn(ctx.clone(), &f, (json_to_value(ctx.clone(), a)?,)).await?
             };
-            println!("[+] Call: {f}({a}) => {}", value_to_json(ctx.clone(),r)?);
+            println!("[+] Call: {f}({a}) => {}", value_to_json(ctx.clone(), r)?);
         }
 
-        Ok::<(),anyhow::Error>(())
+        Ok::<(), anyhow::Error>(())
     })
     .await?;
 

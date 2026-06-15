@@ -1,7 +1,7 @@
 use reqwest::{header::HeaderMap, header::HeaderName, Client, Method, Response};
 use rquickjs::{
-    class::Trace, function::Rest, Array, ArrayBuffer, Ctx, Exception, Function, Iterable,
-    JsLifetime, Object, Value,
+    class::Trace, function::Rest, Array, ArrayBuffer, Class, Ctx, Exception, Function, IntoJs,
+    Iterable, JsLifetime, Object, Value,
 };
 
 use std::str::FromStr;
@@ -11,8 +11,8 @@ use std::str::FromStr;
 pub struct FetchResponse {
     #[qjs(skip_trace)]
     response: Option<Response>,
-    #[qjs(get, skip_trace)]
-    headers: FetchHeaders,
+    #[qjs(skip_trace)]
+    header_map: HeaderMap,
     #[qjs(get)]
     ok: bool,
     #[qjs(get)]
@@ -65,6 +65,15 @@ impl FetchResponse {
     pub fn debug(&self) -> String {
         format!("FetchResponse: {:?}", self)
     }
+    #[qjs(get)]
+    pub fn headers<'js>(&self, ctx: Ctx<'js>) -> rquickjs::Result<Class<'js, FetchHeaders>> {
+        Class::instance(
+            ctx,
+            FetchHeaders {
+                headers: self.header_map.clone(),
+            },
+        )
+    }
 }
 
 #[derive(Debug, Clone, Trace, JsLifetime)]
@@ -99,7 +108,7 @@ impl FetchHeaders {
         );
         Ok(())
     }
-    pub fn entries<'js>(&mut self, ctx: Ctx<'js>) -> rquickjs::Result<Iterable<Vec<Array<'js>>>> {
+    pub fn entries<'js>(&mut self, ctx: Ctx<'js>) -> rquickjs::Result<Value<'js>> {
         let mut entries: Vec<Array> = Vec::new();
         for (k, v) in self.headers.iter() {
             let entry = Array::new(ctx.clone())?;
@@ -107,7 +116,7 @@ impl FetchHeaders {
             entry.set(1, String::from_utf8_lossy(v.as_bytes()).to_string())?;
             entries.push(entry);
         }
-        Ok(Iterable::from(entries))
+        Iterable::from(entries).into_js(&ctx)
     }
     #[qjs(rename = "forEach")]
     pub fn for_each(&self, _ctx: Ctx<'_>, f: Function<'_>) -> rquickjs::Result<()> {
@@ -126,13 +135,13 @@ impl FetchHeaders {
     pub fn has(&self, name: String) -> bool {
         self.headers.contains_key(name)
     }
-    pub fn keys(&mut self) -> rquickjs::Result<Iterable<Vec<String>>> {
+    pub fn keys<'js>(&mut self, ctx: Ctx<'js>) -> rquickjs::Result<Value<'js>> {
         let keys = self
             .headers
             .keys()
             .map(|k| k.to_string())
             .collect::<Vec<String>>();
-        Ok(Iterable::from(keys))
+        Iterable::from(keys).into_js(&ctx)
     }
     pub fn set(&mut self, ctx: Ctx<'_>, name: String, value: String) -> rquickjs::Result<()> {
         self.headers.insert(
@@ -144,13 +153,13 @@ impl FetchHeaders {
         );
         Ok(())
     }
-    pub fn values(&mut self) -> rquickjs::Result<Iterable<Vec<String>>> {
+    pub fn values<'js>(&mut self, ctx: Ctx<'js>) -> rquickjs::Result<Value<'js>> {
         let values = self
             .headers
             .values()
             .map(|v| String::from_utf8_lossy(v.as_bytes()).to_string())
             .collect::<Vec<String>>();
-        Ok(Iterable::from(values))
+        Iterable::from(values).into_js(&ctx)
     }
 }
 
@@ -213,9 +222,7 @@ pub async fn fetch<'js>(ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Resu
         .map_err(|e| Exception::throw_message(&ctx, &format!("Fetch Error: {e}")))?;
 
     Ok(FetchResponse {
-        headers: FetchHeaders {
-            headers: response.headers().clone(),
-        },
+        header_map: response.headers().clone(),
         ok: response.status().is_success(),
         status: response.status().as_u16(),
         status_text: response.status().canonical_reason().map(|s| s.to_string()),
