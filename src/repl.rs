@@ -1,13 +1,14 @@
 use crate::run::run_script;
-use crate::utils::print_v;
-use rquickjs::{function::Rest, CatchResultExt, Ctx, Value};
+use crate::utils::log_v;
+use rquickjs::{CatchResultExt, Ctx, Value};
 use std::io::Write;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-/// If `v` is a promise, drive it to completion and return the resolved value.
+/// If globalThis.__resolve_promise == true check if `v` is a promise, and if
+/// so await completion and return the resolved value 
 async fn resolve_value<'js>(ctx: &Ctx<'js>, v: Value<'js>) -> anyhow::Result<Value<'js>> {
-    if v.is_promise() {
+    if let Some(true) = ctx.globals().get::<_, bool>("__resolve_promise").ok() && v.is_promise() {
         let promise = v.into_promise().expect("checked is_promise");
         promise
             .into_future::<Value<'js>>()
@@ -31,7 +32,7 @@ pub async fn repl(ctx: Ctx<'_>) -> anyhow::Result<()> {
                     Ok(v) => {
                         if !v.is_undefined() {
                             ctx.globals().set("_", v.clone())?;
-                            let _ = print_v(ctx.clone(), Rest(vec![v]));
+                            println!("{}", log_v(&v, false, 0));
                         }
                     }
                     Err(e) => eprintln!("{e}"),
@@ -107,7 +108,7 @@ pub async fn repl_rl(ctx: Ctx<'_>) -> anyhow::Result<()> {
                 Ok(v) => {
                     if !v.is_undefined() {
                         ctx.globals().set("_", v.clone())?;
-                        let _ = print_v(ctx.clone(), Rest(vec![v]));
+                        println!("{}", log_v(&v, false, 0));
                     }
                 }
                 Err(e) => eprintln!("[-] JS Error: {e}"),
