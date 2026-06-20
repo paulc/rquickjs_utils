@@ -1,24 +1,9 @@
-use crate::run::run_script;
+use crate::run::{resolve_promise, run_script};
 use crate::utils::log_v;
-use rquickjs::{CatchResultExt, Ctx, Value};
+use rquickjs::Ctx;
 use std::io::Write;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
-
-/// If globalThis.__resolve_promise == true check if `v` is a promise, and if
-/// so await completion and return the resolved value 
-pub async fn resolve_value<'js>(ctx: &Ctx<'js>, v: Value<'js>) -> anyhow::Result<Value<'js>> {
-    if let Some(true) = ctx.globals().get::<_, bool>("__resolve_promise").ok() && v.is_promise() {
-        let promise = v.into_promise().expect("checked is_promise");
-        promise
-            .into_future::<Value<'js>>()
-            .await
-            .catch(ctx)
-            .map_err(|e| anyhow::anyhow!("{e}"))
-    } else {
-        Ok(v)
-    }
-}
 
 /// Simple REPL
 pub async fn repl(ctx: Ctx<'_>) -> anyhow::Result<()> {
@@ -28,7 +13,7 @@ pub async fn repl(ctx: Ctx<'_>) -> anyhow::Result<()> {
         let script = read_multiline_input(&mut reader).await?;
         if !script.is_empty() {
             match run_script(ctx.clone(), script).await {
-                Ok(v) => match resolve_value(&ctx, v).await {
+                Ok(v) => match resolve_promise(&ctx, v).await {
                     Ok(v) => {
                         if !v.is_undefined() {
                             ctx.globals().set("_", v.clone())?;
@@ -104,7 +89,7 @@ pub async fn repl_rl(ctx: Ctx<'_>) -> anyhow::Result<()> {
     // Get input cmd
     while let Some(cmd) = cmd_rx.recv().await {
         match run_script(ctx.clone(), cmd).await {
-            Ok(v) => match resolve_value(&ctx, v).await {
+            Ok(v) => match resolve_promise(&ctx, v).await {
                 Ok(v) => {
                     if !v.is_undefined() {
                         ctx.globals().set("_", v.clone())?;

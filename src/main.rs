@@ -2,8 +2,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use rquickjs_utils::date::register_date;
 use rquickjs_utils::fetch::register_fetch;
-use rquickjs_utils::repl::{repl_rl, resolve_value};
-use rquickjs_utils::run::{call_fn, get_script, run_module, run_script};
+use rquickjs_utils::repl::repl_rl;
+use rquickjs_utils::run::{call_fn, get_script, run_module, run_script, set_resolve_promise};
 use rquickjs_utils::utils::{json_to_value, log_v, register_fns};
 
 use argh::FromArgs;
@@ -68,9 +68,7 @@ async fn main() -> anyhow::Result<()> {
         register_date(&ctx)?;
         register_fetch(&ctx)?;
 
-        if args.resolve_promise {
-            ctx.globals().set::<_, bool>("__resolve_promise", true)?;
-        }
+        set_resolve_promise(&ctx, args.resolve_promise)?;
 
         // Run modules
         for module in args.module {
@@ -93,13 +91,12 @@ async fn main() -> anyhow::Result<()> {
             .iter()
             .zip(args.arg.iter().chain(std::iter::repeat(&("".to_string()))))
         {
+            // Call fn - resolves promise if needed (__resolve_promise = true)
             let r = if a.is_empty() {
                 call_fn(ctx.clone(), &f, ((),)).await?
             } else {
                 call_fn(ctx.clone(), &f, (json_to_value(ctx.clone(), a)?,)).await?
             };
-            // Resolve future if __resolve_promise set
-            let r = resolve_value(&ctx.clone(), r).await?;
             println!("[+] Call: {f}({a}) => {}", log_v(&r, false, 0));
         }
 
