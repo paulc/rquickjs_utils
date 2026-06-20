@@ -51,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
     // Start task waiting for Ctrl-C
     tokio::spawn(async move {
         ctrl_c().await.expect("Error listening for Ctrl-C");
-        println!("[+] User Exit",);
+        eprintln!("[+] User Exit",);
         USER_EXIT.store(true, Ordering::Relaxed);
     });
 
@@ -97,14 +97,14 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 call_fn(ctx.clone(), &f, (json_to_value(ctx.clone(), a)?,)).await?
             };
-            println!("[+] Call: {f}({a}) => {}", log_v(&r, false, 0));
+            eprintln!("[+] Call: {f}({a}) => {}", log_v(&r, false, 0));
         }
 
         Ok::<(), anyhow::Error>(())
     })
     .await?;
 
-    println!("[+] Tasks Pending: {:?}", rt.is_job_pending().await);
+    eprintln!("[+] Tasks Pending: {:?}", rt.is_job_pending().await);
 
     // Complete pending tasks - use rt.execute_pending_job() rather than rt.idle() to allow
     // USER_EXIT to interrupt

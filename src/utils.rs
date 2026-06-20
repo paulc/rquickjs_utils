@@ -26,6 +26,7 @@ pub fn register_fns(ctx: &Ctx<'_>) -> anyhow::Result<()> {
     // Add console.log function
     let console = Object::new(ctx.clone())?;
     console.set("log", js_log)?;
+    console.set("log_err", js_log_err)?;
     ctx.globals().set("console", console)?;
     // Add to_utf8 / to_buffer prototype methods
     ctx.eval::<(),_>(r#"
@@ -200,6 +201,19 @@ pub fn log_v<'js>(v: &Value<'js>, quote: bool, depth: usize) -> String {
 #[rquickjs::function]
 pub fn log<'js>(_ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result<()> {
     println!(
+        "{}",
+        args.iter()
+            .map(|a| log_v(a, false, 0))
+            .collect::<Vec<String>>()
+            .join(" ")
+    );
+    Ok(())
+}
+
+/// console.log -> stderr
+#[rquickjs::function]
+pub fn log_err<'js>(_ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result<()> {
+    eprintln!(
         "{}",
         args.iter()
             .map(|a| log_v(a, false, 0))
