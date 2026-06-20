@@ -1,7 +1,7 @@
 use std::io::Read;
 
 use anyhow::anyhow;
-use rquickjs::{prelude::IntoArgs, CatchResultExt, Ctx, Module, Object, Value};
+use rquickjs::{prelude::IntoArgs, CatchResultExt, Ctx, Function, Module, Value};
 
 /// Expand script arg to handle literal script, @file or stdin (-)
 pub fn get_script(script: &str) -> anyhow::Result<String> {
@@ -62,14 +62,8 @@ pub async fn call_fn<'js, A>(ctx: Ctx<'js>, path: &str, args: A) -> anyhow::Resu
 where
     A: IntoArgs<'js>,
 {
-    let mut obj = ctx.globals();
-    for p in path.split(".") {
-        obj = obj
-            .get::<_, Object>(p)
-            .map_err(|e| anyhow::anyhow!("Invalid Path: {p} [{e}]"))?;
-    }
-    Ok(obj
-        .as_function()
-        .ok_or_else(|| anyhow::anyhow!("{path} not a function"))?
-        .call::<A, Value>(args)?)
+    let obj: Function = ctx
+        .eval(path)
+        .map_err(|e| anyhow::anyhow!("Invalid Path: {path} [{e}]"))?;
+    Ok(obj.call::<A, Value>(args)?)
 }

@@ -7,7 +7,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 
 /// If globalThis.__resolve_promise == true check if `v` is a promise, and if
 /// so await completion and return the resolved value 
-async fn resolve_value<'js>(ctx: &Ctx<'js>, v: Value<'js>) -> anyhow::Result<Value<'js>> {
+pub async fn resolve_value<'js>(ctx: &Ctx<'js>, v: Value<'js>) -> anyhow::Result<Value<'js>> {
     if let Some(true) = ctx.globals().get::<_, bool>("__resolve_promise").ok() && v.is_promise() {
         let promise = v.into_promise().expect("checked is_promise");
         promise

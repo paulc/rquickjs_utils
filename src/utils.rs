@@ -198,7 +198,7 @@ pub fn log_v<'js>(v: &Value<'js>, quote: bool, depth: usize) -> String {
 
 /// console.log
 #[rquickjs::function]
-fn log<'js>(_ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result<()> {
+pub fn log<'js>(_ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result<()> {
     println!(
         "{}",
         args.iter()

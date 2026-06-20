@@ -2,9 +2,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use rquickjs_utils::date::register_date;
 use rquickjs_utils::fetch::register_fetch;
-use rquickjs_utils::repl::repl_rl;
+use rquickjs_utils::repl::{repl_rl, resolve_value};
 use rquickjs_utils::run::{call_fn, get_script, run_module, run_script};
-use rquickjs_utils::utils::{json_to_value, register_fns, value_to_json};
+use rquickjs_utils::utils::{json_to_value, log_v, register_fns};
 
 use argh::FromArgs;
 
@@ -30,6 +30,9 @@ struct CliArgs {
     #[argh(option)]
     /// call args
     arg: Vec<String>,
+    #[argh(switch)]
+    /// resolve top-level promises in repp
+    resolve_promise: bool,
 }
 
 static USER_EXIT: AtomicBool = AtomicBool::new(false);
@@ -65,6 +68,10 @@ async fn main() -> anyhow::Result<()> {
         register_date(&ctx)?;
         register_fetch(&ctx)?;
 
+        if args.resolve_promise {
+            ctx.globals().set::<_, bool>("__resolve_promise", true)?;
+        }
+
         // Run modules
         for module in args.module {
             run_module(ctx.clone(), get_script(&module)?).await?;
@@ -91,7 +98,9 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 call_fn(ctx.clone(), &f, (json_to_value(ctx.clone(), a)?,)).await?
             };
-            println!("[+] Call: {f}({a}) => {}", value_to_json(ctx.clone(), r)?);
+            // Resolve future if __resolve_promise set
+            let r = resolve_value(&ctx.clone(), r).await?;
+            println!("[+] Call: {f}({a}) => {}", log_v(&r, false, 0));
         }
 
         Ok::<(), anyhow::Error>(())
