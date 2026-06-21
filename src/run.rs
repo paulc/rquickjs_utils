@@ -85,7 +85,7 @@ where
     let obj: Function = ctx
         .eval(path)
         .map_err(|e| anyhow::anyhow!("Invalid Path: {path} [{e}]"))?;
-    // Call and resolve promise if needed
-    let r = resolve_promise(&ctx.clone(), obj.call::<A, Value>(args)?).await?;
+    // We dont resolve promises - these will be handled by the pending tasks loop
+    let r = obj.call::<A, Value>(args)?;
     Ok(r)
 }
